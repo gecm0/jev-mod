@@ -1,0 +1,4 @@
+{
+  "description": "engine.create adds $.jev over $.env, $.http and $.clock beneath",
+  "modules": ["./register.ts"]
+}

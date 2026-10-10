@@ -1,0 +1,24 @@
+{
+  "name": "jev",
+  "version": "0.1.0",
+  "description": "Adds $.jev: typed Choice, Score and Noul judgments from TypeSafe's Jev, with a timeout and validated answers, for other mods to call.",
+  "author": {
+    "name": "gecm"
+  },
+  "repository": "https://github.com/gecm0/jev-mod",
+  "homepage": "https://github.com/gecm0/jev-mod",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "typesafe_api_key": {
+      "type": "string",
+      "title": "TypeSafe API key",
+      "description": "Sent only to api.typesafe.ai. Empty: TYPESAFE_API_KEY from the environment.",
+      "sensitive": true
+    },
+    "model": {
+      "type": "string",
+      "title": "Model",
+      "description": "Jev model id. Empty: TYPESAFE_MODEL from the environment, else jev-latest."
+    }
+  }
+}

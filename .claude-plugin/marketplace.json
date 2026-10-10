@@ -1,0 +1,13 @@
+{
+  "name": "jev-mod",
+  "description": "The jev mod: $.jev for Claude Code, typed judgments from TypeSafe Jev.",
+  "owner": {
+    "name": "gecm0"
+  },
+  "plugins": [
+    {
+      "name": "jev",
+      "source": "./"
+    }
+  ]
+}
