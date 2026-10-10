@@ -5,6 +5,7 @@
   "author": {
     "name": "gecm"
   },
+  "license": "MIT",
   "repository": "https://github.com/gecm0/jev-mod",
   "homepage": "https://github.com/gecm0/jev-mod",
   "types": "./types/index.d.ts",
