@@ -42,15 +42,25 @@ export function jevOf(deps: JevDeps): Jev {
 
       const timeoutMs = Math.min(Math.max(request.timeoutMs ?? DEFAULT_TIMEOUT_MS, 1), MAX_TIMEOUT_MS)
       const started = deps.now()
-      const sent = deps.fetch(ENDPOINT, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
+      let payload: string
+      try {
+        payload = JSON.stringify({
           model: request.model || configured?.trim() || 'jev-latest',
           state: request.state,
           questions: request.questions,
+        })
+      } catch {
+        // A circular value or a throwing toJSON names fields or values; never repeat it.
+        throw new Error('$.jev: the request could not be serialized to JSON.')
+      }
+      // Wrapped so a synchronous throw takes the same sanitized path as a rejection.
+      const sent = Promise.resolve().then(() =>
+        deps.fetch(ENDPOINT, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+          body: payload,
         }),
-      })
+      )
       // Nothing cancels the request itself; a late failure must not surface unhandled.
       sent.catch(() => {})
 
@@ -107,22 +117,52 @@ export function jevOf(deps: JevDeps): Jev {
 }
 
 /** Catches the mistakes TypeSafe would bounce with a 422, before spending a request. */
+// Messages name the field at fault, never its value: values are the caller's evidence.
 function checkRequest(request: JevRequest): void {
-  const entries = Object.entries(request.questions ?? {})
+  if (!isText(request.state)) throw new Error('$.jev: state must be non-empty text, a record or a list.')
+  const entries = Object.entries(isRecord(request.questions) ? request.questions : {})
   if (entries.length === 0) throw new Error('$.jev: ask at least one question.')
-  for (const [id, q] of entries) {
+  for (const [id, raw] of entries) {
     const where = `$.jev: question ${JSON.stringify(id)}`
+    // Typed callers always pass an object; untyped JS callers may not.
+    const q = raw as unknown as Record<string, unknown> | null
+    if (!isRecord(q)) throw new Error(`${where} must be an object.`)
+    if (!isText(q.instructions)) throw new Error(`${where} needs non-empty instructions.`)
     if (q.type === 'choice') {
-      const n = isRecord(q.criteria) ? Object.keys(q.criteria).length : 0
-      if (n < 2 || n > 255) throw new Error(`${where} needs 2 to 255 choice options, got ${n}.`)
+      const options = isRecord(q.criteria) ? Object.values(q.criteria) : []
+      if (options.length < 2 || options.length > 255) {
+        throw new Error(`${where} needs 2 to 255 choice options, got ${options.length}.`)
+      }
+      if (!options.every((o) => o === null || isText(o))) {
+        throw new Error(`${where} has a choice option that is empty; give text or null.`)
+      }
     } else if (q.type === 'score') {
-      const n = Array.isArray(q.criteria) ? q.criteria.length : 0
-      if (n < 2 || n > 10) throw new Error(`${where} needs 2 to 10 score levels, got ${n}.`)
-    } else if (q.type !== 'noul') {
-      // Typed callers cannot get here; untyped JS callers can.
-      throw new Error(`${where} has type ${JSON.stringify((q as { type?: unknown }).type)}; use choice, noul or score.`)
+      const levels = Array.isArray(q.criteria) ? q.criteria : []
+      if (levels.length < 2 || levels.length > 10) {
+        throw new Error(`${where} needs 2 to 10 score levels, got ${levels.length}.`)
+      }
+      if (!levels.every(isText)) throw new Error(`${where} has an empty score level.`)
+    } else if (q.type === 'noul') {
+      const c = q.criteria
+      if (c !== undefined) {
+        const sides = isRecord(c) ? Object.keys(c) : []
+        const ok =
+          isRecord(c) &&
+          sides.length > 0 &&
+          sides.every((k) => (k === 'true' || k === 'false') && isText(c[k]))
+        if (!ok) throw new Error(`${where} noul criteria must be { true?, false? } with non-empty text.`)
+      }
+    } else {
+      throw new Error(`${where} has an unknown type; use choice, noul or score.`)
     }
   }
+}
+
+/** Jev's description shape: a non-empty string, record or list. */
+function isText(value: unknown): boolean {
+  if (typeof value === 'string') return value.trim() !== ''
+  if (Array.isArray(value)) return value.length > 0
+  return isRecord(value) && Object.keys(value).length > 0
 }
 
 /** Whether an answer has the exact shape its question allows. */
@@ -139,7 +179,8 @@ function fits(question: JevQuestion, answer: unknown): boolean {
     answer.score >= 0 &&
     answer.score <= keys.length - 1 &&
     isRecord(answer.legend) &&
-    keys.every((k) => k in (answer.legend as Record<string, unknown>))
+    Object.keys(answer.legend).length === keys.length &&
+    keys.every((k) => isText((answer.legend as Record<string, unknown>)[k]))
   )
 }
 

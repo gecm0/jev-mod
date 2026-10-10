@@ -142,3 +142,45 @@ test('bad questions fail before any request', async () => {
   expect(await messageOf(n.jev.ask({ state: 'x', questions: oneOption }))).toContain('2 to 255')
   expect(n.seen.length).toBe(0)
 })
+
+test('a state that cannot be serialized fails without repeating any of it', async () => {
+  const n = nounOver({ body: OK })
+  const state: Record<string, unknown> = { PRIVATE_STATE: 'secret-value' }
+  state.self = state
+  const circular = await messageOf(n.jev.ask({ ...ASK, state }))
+  expect(circular).toContain('could not be serialized')
+  expect(circular).not.toContain('PRIVATE_STATE')
+  const throwing = { toJSON: () => { throw new Error('leaked-value') } }
+  const message = await messageOf(n.jev.ask({ ...ASK, state: { x: throwing } }))
+  expect(message).not.toContain('leaked-value')
+  expect(n.seen.length).toBe(0)
+})
+
+test('a score legend must have exactly the level keys, each with text', async () => {
+  const bad = (legend: unknown) => ({ ...OK, answers: { ...OK.answers, effort: { ...OK.answers.effort, legend } } })
+  for (const legend of [
+    { '0': null, '1': 42, '2': 'Large' },
+    { '0': 'Tiny', '1': 'Medium', '2': 'Large', extra: 'x' },
+    { '0': 'Tiny', '1': '', '2': 'Large' },
+  ]) {
+    expect(await messageOf(nounOver({ body: bad(legend) }).jev.ask(ASK))).toContain('"effort"')
+  }
+})
+
+test('empty or malformed content fails before any request', async () => {
+  const n = nounOver({ body: OK })
+  const noul = (extra: object) => ({ q: { type: 'noul', instructions: 'x', ...extra } }) as never
+  const cases: [unknown, string][] = [
+    [{ state: '  ', questions: ASK.questions }, 'state must be'],
+    [{ state: 'x', questions: { q: { type: 'noul', instructions: '' } } }, 'non-empty instructions'],
+    [{ state: 'x', questions: { q: { type: 'noul' } } }, 'non-empty instructions'],
+    [{ state: 'x', questions: { q: { type: 'score', instructions: 'x', criteria: ['a', ''] } } }, 'empty score level'],
+    [{ state: 'x', questions: { q: { type: 'choice', instructions: 'x', criteria: { a: '', b: 'y' } } } }, 'choice option'],
+    [{ state: 'x', questions: noul({ criteria: { maybe: 'x' } }) }, 'noul criteria'],
+    [{ state: 'x', questions: { q: null } }, 'must be an object'],
+  ]
+  for (const [request, expected] of cases) {
+    expect(await messageOf(n.jev.ask(request as never))).toContain(expected)
+  }
+  expect(n.seen.length).toBe(0)
+})
